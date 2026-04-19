@@ -28,13 +28,19 @@ void main() {
 FRAGMENT_SHADER = """
 #version 330 core
 
-in vec2 uv;
 out vec4 FragColor;
 
 uniform vec2 center;
+uniform vec2 resolution;
 
 void main() {
-    float d = length(uv - center);
+    vec2 uv = gl_FragCoord.xy / resolution;
+    vec2 corrected = uv;
+    corrected.x *= resolution.x / resolution.y;
+    vec2 c = center;
+    c.x *= resolution.x / resolution.y;
+    
+    float d = length(corrected - c);
 
     if (d < 0.1)
         FragColor = vec4(1, 0, 0, 1);
@@ -43,7 +49,6 @@ void main() {
 }
 """
 
-quad = xp.array([-1, -1, 1, -1, 1, 1, -1, 1], dtype=xp.float32)
 
 class GLWidget(QOpenGLWidget):
     def __init__(self, w, h):
@@ -53,14 +58,15 @@ class GLWidget(QOpenGLWidget):
         self.pixel_data = xp.zeros((self.w, self.h, 4), dtype=np.uint8)
         self.pixel_data[:, :, 3] = 255
         self.pixel_data_OG = xp.copy(self.pixel_data)
-        self.center = xp.array([0, 0.5], dtype=xp.float32)
+        self.center = xp.array([0, 0], dtype=xp.float32)
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_sim)
         self.timer.start(16)
 
+        ratio = self.h/self.w
         width_pixels = xp.linspace(-10, 10, w)
-        height_pixels = xp.linspace(-10, 10, h)
+        height_pixels = xp.linspace(-10*ratio, 10*ratio, h)
         A, B = xp.meshgrid(width_pixels, height_pixels)
         self.pixel_pos = xp.stack([A, B], axis=-1)
 
@@ -78,6 +84,8 @@ class GLWidget(QOpenGLWidget):
         glBindVertexArray(self.VAO)
 
         glBindBuffer(GL_ARRAY_BUFFER, self.VBO)
+        ratio = self.h/self.w
+        quad = xp.array([-1, -ratio, 1, -ratio, 1, ratio, -1, ratio], dtype=xp.float32)
         glBufferData(GL_ARRAY_BUFFER, quad.nbytes, quad, GL_STATIC_DRAW)
 
         glEnableVertexAttribArray(0)
@@ -92,33 +100,23 @@ class GLWidget(QOpenGLWidget):
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, self.w, self.h,0, GL_RGBA, GL_UNSIGNED_BYTE,None)
 
     def update_sim(self):
-        self.center[0] += 0.01
+        self.center[0] = 1
+        self.center[1] = 1.5
         self.update()
-        '''
-        self.pixel_data = xp.copy(self.pixel_data_OG)
-        self.center[0] += 1
-        mask = (xp.sqrt(xp.square(self.pixel_pos[:, :, 0] - self.center[0]) + xp.square(self.pixel_pos[:, :, 1] - self.center[1])) <= 4)
-        self.pixel_data[:, :, 0][mask] = 255
-        self.update()
-        '''
+
     def paintGL(self):
         glClear(GL_COLOR_BUFFER_BIT)
-        glBindTexture(GL_TEXTURE_2D, self.texture)
+
         glUseProgram(self.shader)
+
         center_loc = glGetUniformLocation(self.shader, "center")
         glUniform2f(center_loc, self.center[0], self.center[1])
-        glTexSubImage2D(GL_TEXTURE_2D,0,0, 0, self.w, self.h, GL_RGBA, GL_UNSIGNED_BYTE, self.pixel_data)
-        glEnable(GL_TEXTURE_2D)
-        glBegin(GL_QUADS)
-        glTexCoord2f(0, 0)
-        glVertex2f(-1, -1)
-        glTexCoord2f(1, 0)
-        glVertex2f(1, -1)
-        glTexCoord2f(1, 1)
-        glVertex2f(1, 1)
-        glTexCoord2f(0, 1)
-        glVertex2f(-1, 1)
-        glEnd()
+
+        res_loc = glGetUniformLocation(self.shader, "resolution")
+        glUniform2f(res_loc, self.w, self.h)
+
+        glBindVertexArray(self.VAO)
+        glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
 
     def resizeGL(self, w, h):
         glViewport(0, 0, w, h)
@@ -131,10 +129,10 @@ class MainWindow(QMainWindow):
         screen = QApplication.primaryScreen() or QApplication.screens()[0]
         rect = screen.availableGeometry()
 
-        #self.screen_w = rect.width()
-        #self.screen_h = rect.height()
-        self.screen_w = 800
-        self.screen_h = 800
+        self.screen_w = rect.width()
+        self.screen_h = rect.height()
+        #self.screen_w = 800
+        #self.screen_h = 800
 
         widget = GLWidget(self.screen_w, self.screen_h)
         self.setCentralWidget(widget)
