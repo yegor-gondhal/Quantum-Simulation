@@ -68,6 +68,8 @@ class GLWidget(QOpenGLWidget):
 
         self.keys = set()
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.mouse_down = False
+        self.prev_mouse_coords = xp.array([0, 0], dtype=xp.float32)
 
         ratio = self.h/self.w
         width_pixels = xp.linspace(-10, 10, w)
@@ -80,6 +82,22 @@ class GLWidget(QOpenGLWidget):
 
     def keyReleaseEvent(self, event):
         self.keys.discard(event.key())
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.mouse_down = True
+            self.prev_mouse_coords[0] = event.position().x()
+            self.prev_mouse_coords[1] = event.position().y()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.mouse_down = False
+
+    def mouseMoveEvent(self, event):
+        if self.mouse_down:
+            self.screen_corner[0] += (event.position().x() - self.prev_mouse_coords[0])/self.w
+            self.screen_corner[1] += (event.position().y() - self.prev_mouse_coords[1])/self.h
+
 
     def initializeGL(self):
         glClearColor(0, 0, 0, 1)
@@ -110,20 +128,20 @@ class GLWidget(QOpenGLWidget):
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, self.w, self.h,0, GL_RGBA, GL_UNSIGNED_BYTE,None)
 
     def update_sim(self):
-        if Qt.Key.Key_Left in self.keys:
+        if Qt.Key.Key_A in self.keys:
             self.screen_corner[0] -= 0.01
 
-        if Qt.Key.Key_Right in self.keys:
+        if Qt.Key.Key_D in self.keys:
             self.screen_corner[0] += 0.01
 
-        if Qt.Key.Key_Up in self.keys:
+        if Qt.Key.Key_W in self.keys:
             self.screen_corner[1] += 0.01
 
-        if Qt.Key.Key_Down in self.keys:
+        if Qt.Key.Key_S in self.keys:
             self.screen_corner[1] -= 0.01
 
 
-        self.center[0] += 0.01
+        self.center[0] = 1
         self.center[1] = 1
         self.scale = 1
         self.update()
