@@ -7,7 +7,7 @@ from PyQt6 import QtCore
 from PyQt6.QtWidgets import QApplication, QWidget, QMainWindow
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from PyQt6 import QtOpenGL
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, Qt
 import sys
 
 xp = np
@@ -31,16 +31,16 @@ FRAGMENT_SHADER = """
 out vec4 FragColor;
 
 uniform vec2 center;
+uniform vec2 screen;
 uniform vec2 resolution;
+uniform float scale;
 
 void main() {
-    vec2 uv = gl_FragCoord.xy / resolution;
-    vec2 corrected = uv;
-    corrected.x *= resolution.x / resolution.y;
-    vec2 c = center;
-    c.x *= resolution.x / resolution.y;
+    vec2 uv = (gl_FragCoord.xy / resolution) * scale + screen;
+    uv.x *= resolution.x / resolution.y;
+
     
-    float d = length(corrected - c);
+    float d = length(uv - center);
 
     if (d < 0.1)
         FragColor = vec4(1, 0, 0, 1);
@@ -59,16 +59,27 @@ class GLWidget(QOpenGLWidget):
         self.pixel_data[:, :, 3] = 255
         self.pixel_data_OG = xp.copy(self.pixel_data)
         self.center = xp.array([0, 0], dtype=xp.float32)
+        self.screen_corner = xp.array([0, 0], dtype=xp.float32)
+        self.scale = 0.5
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_sim)
         self.timer.start(16)
+
+        self.keys = set()
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         ratio = self.h/self.w
         width_pixels = xp.linspace(-10, 10, w)
         height_pixels = xp.linspace(-10*ratio, 10*ratio, h)
         A, B = xp.meshgrid(width_pixels, height_pixels)
         self.pixel_pos = xp.stack([A, B], axis=-1)
+
+    def keyPressEvent(self, event):
+        self.keys.add(event.key())
+
+    def keyReleaseEvent(self, event):
+        self.keys.discard(event.key())
 
     def initializeGL(self):
         glClearColor(0, 0, 0, 1)
@@ -84,8 +95,7 @@ class GLWidget(QOpenGLWidget):
         glBindVertexArray(self.VAO)
 
         glBindBuffer(GL_ARRAY_BUFFER, self.VBO)
-        ratio = self.h/self.w
-        quad = xp.array([-1, -ratio, 1, -ratio, 1, ratio, -1, ratio], dtype=xp.float32)
+        quad = xp.array([-1, -1, 1, -1, 1, 1, -1, 1], dtype=xp.float32)
         glBufferData(GL_ARRAY_BUFFER, quad.nbytes, quad, GL_STATIC_DRAW)
 
         glEnableVertexAttribArray(0)
@@ -100,8 +110,22 @@ class GLWidget(QOpenGLWidget):
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, self.w, self.h,0, GL_RGBA, GL_UNSIGNED_BYTE,None)
 
     def update_sim(self):
-        self.center[0] = 1
-        self.center[1] = 1.5
+        if Qt.Key.Key_Left in self.keys:
+            self.screen_corner[0] -= 0.01
+
+        if Qt.Key.Key_Right in self.keys:
+            self.screen_corner[0] += 0.01
+
+        if Qt.Key.Key_Up in self.keys:
+            self.screen_corner[1] += 0.01
+
+        if Qt.Key.Key_Down in self.keys:
+            self.screen_corner[1] -= 0.01
+
+
+        self.center[0] += 0.01
+        self.center[1] = 1
+        self.scale = 1
         self.update()
 
     def paintGL(self):
@@ -111,6 +135,12 @@ class GLWidget(QOpenGLWidget):
 
         center_loc = glGetUniformLocation(self.shader, "center")
         glUniform2f(center_loc, self.center[0], self.center[1])
+
+        screen_loc = glGetUniformLocation(self.shader, "screen")
+        glUniform2f(screen_loc, self.screen_corner[0], self.screen_corner[1])
+
+        scale_loc = glGetUniformLocation(self.shader, "scale")
+        glUniform1f(scale_loc, self.scale)
 
         res_loc = glGetUniformLocation(self.shader, "resolution")
         glUniform2f(res_loc, self.w, self.h)
