@@ -103,11 +103,18 @@ class GLWidget(QOpenGLWidget):
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
+        factor = 1.2
+        mouse_pos = self.screen_corner + 2*xp.array([event.position().x()/self.w, 1 - event.position().y()/self.h], dtype=xp.float32)*xp.array([self.w/self.h, 1.0])*self.scale
 
         if delta > 0 and self.scale < 8:
-            self.scale *= 1.2
+            self.scale *= factor # smaller
+            vec = mouse_pos - self.screen_corner
+            self.screen_corner += vec/factor
+
         elif delta < 0 and self.scale > 1/8:
-            self.scale /= 1.2
+            self.scale /= factor # bigger
+            vec = mouse_pos - self.screen_corner
+            self.screen_corner -= vec * factor
 
     def initializeGL(self):
         glClearColor(0, 0, 0, 1)
@@ -151,7 +158,7 @@ class GLWidget(QOpenGLWidget):
             self.screen_corner[1] -= 0.01
 
 
-        self.center[0] = 1
+        self.center[0] = 1.5
         self.center[1] = 1
         self.update()
 
