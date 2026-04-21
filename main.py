@@ -71,6 +71,7 @@ class GLWidget(QOpenGLWidget):
         self.mouse_down = False
         self.prev_mouse_coords = xp.array([0, 0], dtype=xp.float32)
         self.prev_screen_corner = xp.array([0, 0], dtype=xp.float32)
+        self.scrolling = False
 
         ratio = self.h/self.w
         width_pixels = xp.linspace(-10, 10, w)
@@ -97,24 +98,27 @@ class GLWidget(QOpenGLWidget):
             self.mouse_down = False
 
     def mouseMoveEvent(self, event):
+        self.scrolling = False
         if self.mouse_down:
             self.screen_corner[0] = self.prev_screen_corner[0] - (event.position().x() - self.prev_mouse_coords[0])*self.scale/(0.5*self.w)
             self.screen_corner[1] = self.prev_screen_corner[1] + (event.position().y() - self.prev_mouse_coords[1])*self.scale/(0.5*self.h)
 
     def wheelEvent(self, event):
+        self.scrolling = True
         delta = event.angleDelta().y()
+        self.prev_screen_corner = self.screen_corner
         factor = 1.2
-        mouse_pos = self.screen_corner + 2*xp.array([event.position().x()/self.w, 1 - event.position().y()/self.h], dtype=xp.float32)*xp.array([self.w/self.h, 1.0])*self.scale
+        mouse_pos = (self.screen_corner + 2*xp.array([event.position().x()/self.w, 1 - event.position().y()/self.h], dtype=xp.float32)*self.scale)*xp.array([self.w/self.h, 1.0])
 
         if delta > 0 and self.scale < 8:
             self.scale *= factor # smaller
-            vec = mouse_pos - self.screen_corner
-            self.screen_corner += vec/factor
+            vec = mouse_pos - self.prev_screen_corner
+            self.screen_corner = self.prev_screen_corner - vec*(factor - 1)
 
         elif delta < 0 and self.scale > 1/8:
             self.scale /= factor # bigger
-            vec = mouse_pos - self.screen_corner
-            self.screen_corner -= vec * factor
+            vec = mouse_pos - self.prev_screen_corner
+            self.screen_corner = self.prev_screen_corner + vec*(factor - 1)
 
     def initializeGL(self):
         glClearColor(0, 0, 0, 1)
