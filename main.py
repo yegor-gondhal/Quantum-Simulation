@@ -1,4 +1,3 @@
-#import cupy as cp
 import numpy as np
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
@@ -32,13 +31,11 @@ out vec4 FragColor;
 
 uniform vec2 center;
 uniform vec2 screen;
-uniform vec2 resolution;
+uniform float resolution;
 uniform float scale;
 
 void main() {
-    vec2 uv = (gl_FragCoord.xy / resolution) * scale + screen;
-    uv.x *= resolution.x / resolution.y;
-
+    vec2 uv = gl_FragCoord.xy * scale / resolution + screen;
     
     float d = length(uv - center);
 
@@ -61,6 +58,7 @@ class GLWidget(QOpenGLWidget):
         self.center = xp.array([0, 0], dtype=xp.float32)
         self.screen_corner = xp.array([0, 0], dtype=xp.float32)
         self.scale = 1
+        self.old_scale = 1
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_sim)
@@ -71,7 +69,7 @@ class GLWidget(QOpenGLWidget):
         self.mouse_down = False
         self.prev_mouse_coords = xp.array([0, 0], dtype=xp.float32)
         self.prev_screen_corner = xp.array([0, 0], dtype=xp.float32)
-        self.scrolling = False
+
 
         ratio = self.h/self.w
         width_pixels = xp.linspace(-10, 10, w)
@@ -100,25 +98,24 @@ class GLWidget(QOpenGLWidget):
     def mouseMoveEvent(self, event):
         self.scrolling = False
         if self.mouse_down:
-            self.screen_corner[0] = self.prev_screen_corner[0] - (event.position().x() - self.prev_mouse_coords[0])*self.scale/(0.5*self.w)
-            self.screen_corner[1] = self.prev_screen_corner[1] + (event.position().y() - self.prev_mouse_coords[1])*self.scale/(0.5*self.h)
+            self.screen_corner[0] = self.prev_screen_corner[0] - 2*(event.position().x() - self.prev_mouse_coords[0])*self.scale/(self.h)
+            self.screen_corner[1] = self.prev_screen_corner[1] + 2*(event.position().y() - self.prev_mouse_coords[1])*self.scale/(self.h)
 
     def wheelEvent(self, event):
         self.scrolling = True
         delta = event.angleDelta().y()
-        self.prev_screen_corner = self.screen_corner
         factor = 1.2
-        mouse_pos = (self.screen_corner + 2*xp.array([event.position().x()/self.w, 1 - event.position().y()/self.h], dtype=xp.float32)*self.scale)*xp.array([self.w/self.h, 1.0])
-
+        mouse_pos = (self.screen_corner + 2*xp.array([event.position().x()/self.w, 1 - event.position().y()/self.h], dtype=xp.float32)*self.scale) #*xp.array([self.w/self.h, 1.0])
+        self.old_scale = xp.copy(self.scale)
         if delta > 0 and self.scale < 8:
             self.scale *= factor # smaller
-            vec = mouse_pos - self.prev_screen_corner
-            self.screen_corner = self.prev_screen_corner - vec*(factor - 1)
 
         elif delta < 0 and self.scale > 1/8:
             self.scale /= factor # bigger
-            vec = mouse_pos - self.prev_screen_corner
-            self.screen_corner = self.prev_screen_corner + vec*(factor - 1)
+
+        vec = mouse_pos - self.screen_corner
+        self.screen_corner += vec*(1 - self.scale/self.old_scale)
+        print(mouse_pos)
 
     def initializeGL(self):
         glClearColor(0, 0, 0, 1)
@@ -181,7 +178,7 @@ class GLWidget(QOpenGLWidget):
         glUniform1f(scale_loc, self.scale)
 
         res_loc = glGetUniformLocation(self.shader, "resolution")
-        glUniform2f(res_loc, self.w, self.h)
+        glUniform1f(res_loc, self.h)
 
         glBindVertexArray(self.VAO)
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
