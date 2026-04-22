@@ -48,11 +48,12 @@ void main() {
 
 
 class GLWidget(QOpenGLWidget):
-    def __init__(self, w, h):
+    def __init__(self):
         super().__init__()
-        self.w = w
-        self.h = h
-        self.pixel_data = xp.zeros((self.w, self.h, 4), dtype=np.uint8)
+        dpr = self.devicePixelRatioF()
+        fb_w = self.width() * dpr
+        fb_h = self.height() * dpr
+        self.pixel_data = xp.zeros((int(fb_w), int(fb_h), 4), dtype=np.uint8)
         self.pixel_data[:, :, 3] = 255
         self.pixel_data_OG = xp.copy(self.pixel_data)
         self.center = xp.array([0, 0], dtype=xp.float32)
@@ -71,9 +72,9 @@ class GLWidget(QOpenGLWidget):
         self.prev_screen_corner = xp.array([0, 0], dtype=xp.float32)
 
 
-        ratio = self.h/self.w
-        width_pixels = xp.linspace(-10, 10, w)
-        height_pixels = xp.linspace(-10*ratio, 10*ratio, h)
+        ratio = fb_h/fb_w
+        width_pixels = xp.linspace(-10, 10, int(fb_w))
+        height_pixels = xp.linspace(-10*ratio, 10*ratio, int(fb_h))
         A, B = xp.meshgrid(width_pixels, height_pixels)
         self.pixel_pos = xp.stack([A, B], axis=-1)
 
@@ -84,10 +85,11 @@ class GLWidget(QOpenGLWidget):
         self.keys.discard(event.key())
 
     def mousePressEvent(self, event):
+        dpr = self.devicePixelRatioF()
         if event.button() == Qt.MouseButton.LeftButton:
             self.mouse_down = True
-            self.prev_mouse_coords[0] = event.position().x()
-            self.prev_mouse_coords[1] = event.position().y()
+            self.prev_mouse_coords[0] = event.position().x() * dpr
+            self.prev_mouse_coords[1] = event.position().y() * dpr
             self.prev_screen_corner[0] = self.screen_corner[0]
             self.prev_screen_corner[1] = self.screen_corner[1]
 
@@ -97,27 +99,33 @@ class GLWidget(QOpenGLWidget):
 
     def mouseMoveEvent(self, event):
         self.scrolling = False
+        dpr = self.devicePixelRatioF()
+        fb_h = self.height() * dpr
         if self.mouse_down:
-            self.screen_corner[0] = self.prev_screen_corner[0] - 2*(event.position().x() - self.prev_mouse_coords[0])*self.scale/(self.h)
-            self.screen_corner[1] = self.prev_screen_corner[1] + 2*(event.position().y() - self.prev_mouse_coords[1])*self.scale/(self.h)
+            self.screen_corner[0] = self.prev_screen_corner[0] - (event.position().x() * dpr - self.prev_mouse_coords[0])*self.scale/fb_h
+            self.screen_corner[1] = self.prev_screen_corner[1] + (event.position().y() * dpr - self.prev_mouse_coords[1])*self.scale/fb_h
 
     def wheelEvent(self, event):
-        self.scrolling = True
         delta = event.angleDelta().y()
-        factor = 1.2
-        mouse_pos = (self.screen_corner + 2*xp.array([event.position().x()/self.w, 1 - event.position().y()/self.h], dtype=xp.float32)*self.scale) #*xp.array([self.w/self.h, 1.0])
+        factor = 1.1
+
+        dpr = self.devicePixelRatioF()
+        fb_h = self.height() * dpr
+
+        mouse_screen = xp.array([event.position().x() * dpr/fb_h, 1 - event.position().y() * dpr/fb_h], dtype=xp.float32)
+        mouse_pos = self.screen_corner + mouse_screen*self.scale
         self.old_scale = xp.copy(self.scale)
-        if delta > 0 and self.scale < 8:
+        if delta > 0 and self.scale < 4:
             self.scale *= factor # smaller
 
-        elif delta < 0 and self.scale > 1/8:
+        elif delta < 0 and self.scale > 1/4:
             self.scale /= factor # bigger
 
-        vec = mouse_pos - self.screen_corner
-        self.screen_corner += vec*(1 - self.scale/self.old_scale)
+        self.screen_corner = mouse_pos - mouse_screen*self.scale
         print(mouse_pos)
 
     def initializeGL(self):
+
         glClearColor(0, 0, 0, 1)
 
         self.shader = compileProgram(
@@ -143,7 +151,10 @@ class GLWidget(QOpenGLWidget):
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, self.w, self.h,0, GL_RGBA, GL_UNSIGNED_BYTE,None)
+        dpr = self.devicePixelRatioF()
+        fb_h = self.height() * dpr
+        fb_w = self.width() * dpr
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fb_w, fb_h,0, GL_RGBA, GL_UNSIGNED_BYTE,None)
 
     def update_sim(self):
         if Qt.Key.Key_A in self.keys:
@@ -159,14 +170,16 @@ class GLWidget(QOpenGLWidget):
             self.screen_corner[1] -= 0.01
 
 
-        self.center[0] = 1.5
+        self.center[0] = 0
         self.center[1] = 1
         self.update()
 
     def paintGL(self):
         glClear(GL_COLOR_BUFFER_BIT)
-
         glUseProgram(self.shader)
+
+        dpr = self.devicePixelRatioF()
+        fb_h = self.height() * dpr
 
         center_loc = glGetUniformLocation(self.shader, "center")
         glUniform2f(center_loc, self.center[0], self.center[1])
@@ -178,7 +191,7 @@ class GLWidget(QOpenGLWidget):
         glUniform1f(scale_loc, self.scale)
 
         res_loc = glGetUniformLocation(self.shader, "resolution")
-        glUniform1f(res_loc, self.h)
+        glUniform1f(res_loc, fb_h)
 
         glBindVertexArray(self.VAO)
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
@@ -191,15 +204,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        screen = QApplication.primaryScreen() or QApplication.screens()[0]
-        rect = screen.availableGeometry()
-
-        self.screen_w = rect.width()
-        self.screen_h = rect.height()
-        #self.screen_w = 800
-        #self.screen_h = 800
-
-        widget = GLWidget(self.screen_w, self.screen_h)
+        widget = GLWidget()
         self.setCentralWidget(widget)
 
         self.showMaximized()
