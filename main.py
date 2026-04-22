@@ -1,3 +1,4 @@
+import cupy as cp
 import numpy as np
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
@@ -9,7 +10,7 @@ from PyQt6 import QtOpenGL
 from PyQt6.QtCore import QTimer, Qt
 import sys
 
-xp = np
+xp = cp
 
 
 VERTEX_SHADER = """
@@ -53,11 +54,8 @@ class GLWidget(QOpenGLWidget):
         dpr = self.devicePixelRatioF()
         fb_w = self.width() * dpr
         fb_h = self.height() * dpr
-        self.pixel_data = xp.zeros((int(fb_w), int(fb_h), 4), dtype=np.uint8)
-        self.pixel_data[:, :, 3] = 255
-        self.pixel_data_OG = xp.copy(self.pixel_data)
-        self.center = xp.array([0, 0], dtype=xp.float32)
-        self.screen_corner = xp.array([0, 0], dtype=xp.float32)
+        self.center = np.array([0, 0], dtype=xp.float32)
+        self.screen_corner = np.array([0, 0], dtype=xp.float32)
         self.scale = 1
         self.old_scale = 1
 
@@ -68,15 +66,30 @@ class GLWidget(QOpenGLWidget):
         self.keys = set()
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.mouse_down = False
-        self.prev_mouse_coords = xp.array([0, 0], dtype=xp.float32)
-        self.prev_screen_corner = xp.array([0, 0], dtype=xp.float32)
+        self.prev_mouse_coords = np.array([0, 0], dtype=xp.float32)
+        self.prev_screen_corner = np.array([0, 0], dtype=xp.float32)
 
+
+        e_mass = 9.109e-31
+        c = 3e8
+        e_vel_x = 0.01*c
+        e_vel_y = 0
+        pi = 3.14159
+        hbar = 1.05457e-34
+        k_0_x = e_vel_x*e_mass/hbar
+        k_0_y = e_vel_y*e_mass/hbar
+        k_0 = xp.sqrt(k_0_x**2 + k_0_y**2)
+        e_wavelength = 2*pi/k_0
+        cell_spacing = e_wavelength/20
+        sigma = 8*e_wavelength
+        L = 12*sigma
+        delta_t = e_mass*cell_spacing**2/(8*hbar)
 
         ratio = fb_h/fb_w
-        width_pixels = xp.linspace(-10, 10, int(fb_w))
-        height_pixels = xp.linspace(-10*ratio, 10*ratio, int(fb_h))
+        width_pixels = xp.linspace(0, 10, 1000)
+        height_pixels = xp.linspace(0, 10*ratio, 1000)
         A, B = xp.meshgrid(width_pixels, height_pixels)
-        self.pixel_pos = xp.stack([A, B], axis=-1)
+        cells = xp.stack([A, B], axis=-1)
 
     def keyPressEvent(self, event):
         self.keys.add(event.key())
@@ -112,9 +125,9 @@ class GLWidget(QOpenGLWidget):
         dpr = self.devicePixelRatioF()
         fb_h = self.height() * dpr
 
-        mouse_screen = xp.array([event.position().x() * dpr/fb_h, 1 - event.position().y() * dpr/fb_h], dtype=xp.float32)
+        mouse_screen = np.array([event.position().x() * dpr/fb_h, 1 - event.position().y() * dpr/fb_h], dtype=np.float32)
         mouse_pos = self.screen_corner + mouse_screen*self.scale
-        self.old_scale = xp.copy(self.scale)
+        self.old_scale = np.copy(self.scale)
         if delta > 0 and self.scale < 4:
             self.scale *= factor # smaller
 
@@ -139,7 +152,7 @@ class GLWidget(QOpenGLWidget):
         glBindVertexArray(self.VAO)
 
         glBindBuffer(GL_ARRAY_BUFFER, self.VBO)
-        quad = xp.array([-1, -1, 1, -1, 1, 1, -1, 1], dtype=xp.float32)
+        quad = np.array([-1, -1, 1, -1, 1, 1, -1, 1], dtype=np.float32)
         glBufferData(GL_ARRAY_BUFFER, quad.nbytes, quad, GL_STATIC_DRAW)
 
         glEnableVertexAttribArray(0)
