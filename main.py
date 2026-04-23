@@ -32,18 +32,25 @@ out vec4 FragColor;
 
 uniform vec2 center;
 uniform vec2 screen;
+//uniform vec2 max;
 uniform float resolution;
 uniform float scale;
 
 void main() {
     vec2 uv = gl_FragCoord.xy * scale / resolution + screen;
+    //if (uv.x < 0 || uv.x > max.x || uv.y < 0 || uv.y > max.y)
+    //    FragColor = vec4(0, 0, 0, 1);
+    //else
+    //    FragColor = vec4(1, 0, 0, 1);
+    FragColor = vec4(0, 0, 0, 1);
     
-    float d = length(uv - center);
+    
+    //float d = length(uv - center);
 
-    if (d < 0.1)
-        FragColor = vec4(1, 0, 0, 1);
-    else
-        FragColor = vec4(0, 0, 0, 1);
+    //if (d < 0.1)
+    //    FragColor = vec4(1, 0, 0, 1);
+    //else
+    //    FragColor = vec4(0, 0, 0, 1);
 }
 """
 
@@ -52,12 +59,10 @@ class GLWidget(QOpenGLWidget):
     def __init__(self):
         super().__init__()
         dpr = self.devicePixelRatioF()
-        fb_w = self.width() * dpr
-        fb_h = self.height() * dpr
-        self.center = np.array([0, 0], dtype=xp.float32)
-        self.screen_corner = np.array([0, 0], dtype=xp.float32)
-        self.scale = 1
-        self.old_scale = 1
+        fb_h = max(self.height() * dpr, 1.0)
+        fb_w = max(self.width() * dpr, 1.0)
+        self.center = np.array([0, 0], dtype=np.float32)
+        self.screen_corner = np.array([0, 0], dtype=np.float32)
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_sim)
@@ -66,42 +71,49 @@ class GLWidget(QOpenGLWidget):
         self.keys = set()
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.mouse_down = False
-        self.prev_mouse_coords = np.array([0, 0], dtype=xp.float32)
-        self.prev_screen_corner = np.array([0, 0], dtype=xp.float32)
+        self.prev_mouse_coords = np.array([0, 0], dtype=np.float32)
+        self.prev_screen_corner = np.array([0, 0], dtype=np.float32)
+        ratio = fb_h / fb_w
 
 
-        e_mass = 9.109e-31
+        self.e_mass = 9.109e-31
         c = 3e8
         e_vel_x = 0.01*c
         e_vel_y = 0
-        hbar = 1.05457e-34
-        k_0_x = e_vel_x*e_mass/hbar
-        k_0_y = e_vel_y*e_mass/hbar
-        k_0 = xp.sqrt(k_0_x**2 + k_0_y**2)
-        e_wavelength = 2*xp.pi/k_0
+        self.hbar = 1.05457e-34
+        k_0_x = e_vel_x*self.e_mass/self.hbar
+        k_0_y = e_vel_y*self.e_mass/self.hbar
+        self.k_0 = xp.sqrt(k_0_x**2 + k_0_y**2)
+        e_wavelength = 2*xp.pi/self.k_0
         cell_spacing = e_wavelength/20
         sigma = 8*e_wavelength
-        L = 12*sigma
-        delta_t = e_mass*cell_spacing**2/(8*hbar)
-        x_i = L/10
-        y_i = L/2
+        self.L = 12*sigma
+        self.delta_t = self.e_mass*cell_spacing**2/(8*self.hbar)
+        x_i = self.L/10
+        y_i = self.L*ratio/2
 
-        ratio = fb_h/fb_w
-        width_cells = xp.linspace(0, L, int(L/cell_spacing))
-        height_cells = xp.linspace(0, L*ratio, int(L*ratio/cell_spacing))
+
+        width_cells = xp.linspace(0, self.L, int(self.L/cell_spacing))
+        height_cells = xp.linspace(0, self.L*ratio, int(self.L*ratio/cell_spacing))
         A, B = xp.meshgrid(width_cells, height_cells)
         cell_pos = xp.stack([A, B], axis=-1)
 
         # Initial Values
-        psi = xp.exp((1j)*(k_0_x*(cell_pos[..., 0] - x_i) + k_0_y*(cell_pos[..., 1] - y_i)) - ((cell_pos[..., 0] - x_i)**2 + (cell_pos[..., 1] - y_i)**2)/(2*sigma**2))
+        self.psi = xp.exp((1j)*(k_0_x*(cell_pos[..., 0] - x_i) + k_0_y*(cell_pos[..., 1] - y_i)) - ((cell_pos[..., 0] - x_i)**2 + (cell_pos[..., 1] - y_i)**2)/(2*sigma**2))
 
         # Integrate
-        psi_prob_int = (xp.abs(psi)**2)
+        psi_prob_int = (xp.abs(self.psi)**2)
         psi_prob_int = xp.sum(psi_prob_int)
         psi_prob_int *= cell_spacing**2
 
         # Normalize wavefunction
-        psi /= xp.sqrt(psi_prob_int)
+        self.psi /= xp.sqrt(psi_prob_int)
+
+        self.V = xp.zeros_like(self.psi)
+        #self.scale = self.L*ratio
+        #self.old_scale = self.L*ratio
+        self.scale = 1
+        self.old_scale = 1
 
 
 
@@ -128,29 +140,37 @@ class GLWidget(QOpenGLWidget):
     def mouseMoveEvent(self, event):
         self.scrolling = False
         dpr = self.devicePixelRatioF()
-        fb_h = self.height() * dpr
+        fb_h = max(self.height() * dpr, 1.0)
         if self.mouse_down:
             self.screen_corner[0] = self.prev_screen_corner[0] - (event.position().x() * dpr - self.prev_mouse_coords[0])*self.scale/fb_h
             self.screen_corner[1] = self.prev_screen_corner[1] + (event.position().y() * dpr - self.prev_mouse_coords[1])*self.scale/fb_h
 
     def wheelEvent(self, event):
+        print("Activating wheelEvent")
         delta = event.angleDelta().y()
         factor = 1.1
 
         dpr = self.devicePixelRatioF()
-        fb_h = self.height() * dpr
-
+        fb_h = max(self.height() * dpr, 1.0)
+        print("Old Scale: ", self.scale)
+        print("Old Screen Corner: ", self.screen_corner)
         mouse_screen = np.array([event.position().x() * dpr/fb_h, 1 - event.position().y() * dpr/fb_h], dtype=np.float32)
+        print("Mouse Screen: ", mouse_screen)
         mouse_pos = self.screen_corner + mouse_screen*self.scale
+        print("Mouse Position: ", mouse_pos)
         self.old_scale = np.copy(self.scale)
         if delta > 0 and self.scale < 4:
             self.scale *= factor # smaller
+            self.scale = np.clip(self.scale, self.L * 0.01, self.L * 10)
+            print("New Scale: ", self.scale)
 
         elif delta < 0 and self.scale > 1/4:
             self.scale /= factor # bigger
+            self.scale = np.clip(self.scale, self.L * 0.01, self.L * 10)
+            print("New Scale: ", self.scale)
 
         self.screen_corner = mouse_pos - mouse_screen*self.scale
-        print(mouse_pos)
+        print("New Screen Corner: ", self.screen_corner)
 
     def initializeGL(self):
 
@@ -180,8 +200,8 @@ class GLWidget(QOpenGLWidget):
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 
         dpr = self.devicePixelRatioF()
-        fb_h = self.height() * dpr
-        fb_w = self.width() * dpr
+        fb_h = max(self.height() * dpr, 1.0)
+        fb_w = max(self.width() * dpr, 1.0)
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fb_w, fb_h,0, GL_RGBA, GL_UNSIGNED_BYTE,None)
 
     def update_sim(self):
@@ -198,8 +218,14 @@ class GLWidget(QOpenGLWidget):
             self.screen_corner[1] -= 0.01
 
 
-        self.center[0] = 0
-        self.center[1] = 1
+        #self.center[0] = 0
+        #self.center[1] = 1
+
+        self.psi = self.psi*xp.exp(-1j*self.V*self.delta_t/self.hbar)
+        psi_hat = xp.fft.fft2(self.psi)
+        psi_hat = psi_hat*xp.exp(-1j*self.hbar*(self.k_0**2)*self.delta_t/(2*self.e_mass))
+        self.psi = xp.fft.ifft2(psi_hat)
+
         self.update()
 
     def paintGL(self):
@@ -207,7 +233,8 @@ class GLWidget(QOpenGLWidget):
         glUseProgram(self.shader)
 
         dpr = self.devicePixelRatioF()
-        fb_h = self.height() * dpr
+        fb_h = max(self.height() * dpr, 1.0)
+        fb_w = max(self.width() * dpr, 1.0)
 
         center_loc = glGetUniformLocation(self.shader, "center")
         glUniform2f(center_loc, self.center[0], self.center[1])
@@ -220,6 +247,9 @@ class GLWidget(QOpenGLWidget):
 
         res_loc = glGetUniformLocation(self.shader, "resolution")
         glUniform1f(res_loc, fb_h)
+
+        #max_loc = glGetUniformLocation(self.shader, "max")
+        #glUniform2f(max_loc, self.L, self.L*fb_h/fb_w)
 
         glBindVertexArray(self.VAO)
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
