@@ -34,17 +34,33 @@ uniform vec2 screen;
 uniform vec2 max;
 uniform float resolution;
 uniform float scale;
+uniform vec2 num_cells;
+uniform sampler2D psi_tex;
 
 void main() {
     vec2 uv = gl_FragCoord.xy * scale / resolution + screen;
     float padding = 5e-10;
-    if (uv.x > 0 && uv.x < max.x && uv.y > 0 && uv.y < max.y)
-        FragColor = vec4(1, 0, 0, 1);
-    else if (uv.x > -padding && uv.x < max.x + padding && uv.y > -padding && uv.y < max.y + padding)
+    if (uv.x > 0 && uv.x < max.x && uv.y > 0 && uv.y < max.y) {
+        float x_cell = uv.x / max.x;
+        float y_cell = uv.y / max.y;
+        vec2 tex_uv = vec2(x_cell, y_cell);
+        float vis = texture(psi_tex, tex_uv).r;
+        if (vis < 0.33) {
+            FragColor = vec4(3*vis, 0, 0, 1);
+        }
+        else if (vis > 0.66) {
+            FragColor = vec4(1, 1, 3*(vis - 0.66), 1);
+        }
+        else {
+            FragColor = vec4(1, 3*(vis - 0.33), 0, 1);
+        }
+    }
+    else if (uv.x > -padding && uv.x < max.x + padding && uv.y > -padding && uv.y < max.y + padding) {
         FragColor = vec4(0.5, 0.5, 0.5, 1);
-    else
+    }
+    else {
         FragColor = vec4(0, 0, 0, 1);
-
+    }
 }
 """
 
@@ -78,13 +94,14 @@ class GLWidget(QOpenGLWidget):
         self.cell_spacing = e_wavelength/20
         sigma = 8*e_wavelength
         self.L = 12*sigma
-        self.delta_t = self.e_mass*self.cell_spacing**2/(8*self.hbar)
+        self.delta_t = self.e_mass*self.cell_spacing**2/(8*self.hbar) # 8
         x_i = self.L/10
         y_i = self.L*self.sim_ratio/2
 
+        self.num_cells = [int(self.L/self.cell_spacing), int(self.L*self.sim_ratio/self.cell_spacing)]
 
-        width_cells = xp.linspace(0, self.L, int(self.L/self.cell_spacing))
-        height_cells = xp.linspace(0, self.L*self.sim_ratio, int(self.L*self.sim_ratio/self.cell_spacing))
+        width_cells = xp.linspace(0, self.L, self.num_cells[0])
+        height_cells = xp.linspace(0, self.L*self.sim_ratio, self.num_cells[1])
         A, B = xp.meshgrid(width_cells, height_cells)
         cell_pos = xp.stack([A, B], axis=-1)
 
@@ -172,16 +189,16 @@ class GLWidget(QOpenGLWidget):
         glEnableVertexAttribArray(0)
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, None)
 
-        self.texture = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, self.texture)
+        self.psi_texture = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self.psi_texture)
 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 
-        dpr = self.devicePixelRatioF()
-        fb_h = max(self.height() * dpr, 1.0)
-        fb_w = max(self.width() * dpr, 1.0)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fb_w, fb_h,0, GL_RGBA, GL_UNSIGNED_BYTE,None)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, self.psi.shape[1], self.psi.shape[0], 0, GL_RED, GL_FLOAT, None)
 
     def update_sim(self):
 
@@ -193,7 +210,16 @@ class GLWidget(QOpenGLWidget):
         psi_hat = xp.fft.fft2(self.psi)
         psi_hat = psi_hat*xp.exp(-1j*self.hbar*(k_squared**2)*self.delta_t/(2*self.e_mass))
         self.psi = xp.fft.ifft2(psi_hat)
+        psi_prob = xp.square(xp.abs(self.psi))
+        psi_vis = xp.log(1 + 1e4*psi_prob)
+        psi_vis = psi_vis / xp.max(psi_vis)
+        psi_vis_cpu = xp.asnumpy(psi_vis)
 
+        glBindTexture(GL_TEXTURE_2D, self.psi_texture)
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, psi_vis_cpu.shape[1], psi_vis_cpu.shape[0], GL_RED, GL_FLOAT, psi_vis_cpu)
+
+        #print("Max: ", np.max(psi_vis_cpu))
+        #print("Min: ", np.min(psi_vis_cpu), "\n")
 
         self.update()
 
@@ -217,8 +243,17 @@ class GLWidget(QOpenGLWidget):
         max_loc = glGetUniformLocation(self.shader, "max")
         glUniform2f(max_loc, self.L, self.L*fb_h/fb_w)
 
+        num_cell_loc = glGetUniformLocation(self.shader, "num_cells")
+        glUniform2f(num_cell_loc, self.num_cells[0], self.num_cells[1])
+
         glBindVertexArray(self.VAO)
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
+
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self.psi_texture)
+
+        tex_loc = glGetUniformLocation(self.shader, "psi_tex")
+        glUniform1i(tex_loc, 0)
 
 
 
