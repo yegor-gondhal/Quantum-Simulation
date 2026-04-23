@@ -109,8 +109,6 @@ class GLWidget(QOpenGLWidget):
         self.scale = float(self.L*ratio)
         self.old_scale = float(self.L*ratio)
         self.initial_scale = np.copy(self.scale)
-        #self.scale = 1
-        #self.old_scale = 1
 
 
 
@@ -166,7 +164,6 @@ class GLWidget(QOpenGLWidget):
             self.scale /= factor # bigger
             print("New Scale: ", self.scale)
 
-        #self.scale = np.clip(self.scale, self.L * 0.01, self.L * 10)
         self.screen_corner = mouse_pos - mouse_screen*self.scale
         print("New Screen Corner: ", self.screen_corner)
 
@@ -203,18 +200,6 @@ class GLWidget(QOpenGLWidget):
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fb_w, fb_h,0, GL_RGBA, GL_UNSIGNED_BYTE,None)
 
     def update_sim(self):
-        if Qt.Key.Key_A in self.keys:
-            self.screen_corner[0] -= 0.01
-
-        if Qt.Key.Key_D in self.keys:
-            self.screen_corner[0] += 0.01
-
-        if Qt.Key.Key_W in self.keys:
-            self.screen_corner[1] += 0.01
-
-        if Qt.Key.Key_S in self.keys:
-            self.screen_corner[1] -= 0.01
-
 
         self.psi = self.psi*xp.exp(-1j*self.V*self.delta_t/self.hbar)
         psi_hat = xp.fft.fft2(self.psi)
