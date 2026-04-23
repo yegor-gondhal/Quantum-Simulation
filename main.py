@@ -32,25 +32,20 @@ out vec4 FragColor;
 
 uniform vec2 center;
 uniform vec2 screen;
-//uniform vec2 max;
+uniform vec2 max;
 uniform float resolution;
 uniform float scale;
 
 void main() {
     vec2 uv = gl_FragCoord.xy * scale / resolution + screen;
-    //if (uv.x < 0 || uv.x > max.x || uv.y < 0 || uv.y > max.y)
-    //    FragColor = vec4(0, 0, 0, 1);
-    //else
-    //    FragColor = vec4(1, 0, 0, 1);
-    FragColor = vec4(0, 0, 0, 1);
-    
-    
-    //float d = length(uv - center);
+    float padding = 5e-10;
+    if (uv.x > 0 && uv.x < max.x && uv.y > 0 && uv.y < max.y)
+        FragColor = vec4(1, 0, 0, 1);
+    else if (uv.x > -padding && uv.x < max.x + padding && uv.y > -padding && uv.y < max.y + padding)
+        FragColor = vec4(0.5, 0.5, 0.5, 1);
+    else
+        FragColor = vec4(0, 0, 0, 1);
 
-    //if (d < 0.1)
-    //    FragColor = vec4(1, 0, 0, 1);
-    //else
-    //    FragColor = vec4(0, 0, 0, 1);
 }
 """
 
@@ -110,10 +105,12 @@ class GLWidget(QOpenGLWidget):
         self.psi /= xp.sqrt(psi_prob_int)
 
         self.V = xp.zeros_like(self.psi)
-        #self.scale = self.L*ratio
-        #self.old_scale = self.L*ratio
-        self.scale = 1
-        self.old_scale = 1
+
+        self.scale = float(self.L*ratio)
+        self.old_scale = float(self.L*ratio)
+        self.initial_scale = np.copy(self.scale)
+        #self.scale = 1
+        #self.old_scale = 1
 
 
 
@@ -147,6 +144,8 @@ class GLWidget(QOpenGLWidget):
 
     def wheelEvent(self, event):
         print("Activating wheelEvent")
+        print(type(self.L), self.L)
+        print(type(self.scale), self.scale)
         delta = event.angleDelta().y()
         factor = 1.1
 
@@ -159,16 +158,15 @@ class GLWidget(QOpenGLWidget):
         mouse_pos = self.screen_corner + mouse_screen*self.scale
         print("Mouse Position: ", mouse_pos)
         self.old_scale = np.copy(self.scale)
-        if delta > 0 and self.scale < 4:
+        if delta > 0 and self.scale < 4*self.initial_scale:
             self.scale *= factor # smaller
-            self.scale = np.clip(self.scale, self.L * 0.01, self.L * 10)
             print("New Scale: ", self.scale)
 
-        elif delta < 0 and self.scale > 1/4:
+        elif delta < 0 and self.scale > (1/4)*self.initial_scale:
             self.scale /= factor # bigger
-            self.scale = np.clip(self.scale, self.L * 0.01, self.L * 10)
             print("New Scale: ", self.scale)
 
+        #self.scale = np.clip(self.scale, self.L * 0.01, self.L * 10)
         self.screen_corner = mouse_pos - mouse_screen*self.scale
         print("New Screen Corner: ", self.screen_corner)
 
@@ -218,9 +216,6 @@ class GLWidget(QOpenGLWidget):
             self.screen_corner[1] -= 0.01
 
 
-        #self.center[0] = 0
-        #self.center[1] = 1
-
         self.psi = self.psi*xp.exp(-1j*self.V*self.delta_t/self.hbar)
         psi_hat = xp.fft.fft2(self.psi)
         psi_hat = psi_hat*xp.exp(-1j*self.hbar*(self.k_0**2)*self.delta_t/(2*self.e_mass))
@@ -248,8 +243,8 @@ class GLWidget(QOpenGLWidget):
         res_loc = glGetUniformLocation(self.shader, "resolution")
         glUniform1f(res_loc, fb_h)
 
-        #max_loc = glGetUniformLocation(self.shader, "max")
-        #glUniform2f(max_loc, self.L, self.L*fb_h/fb_w)
+        max_loc = glGetUniformLocation(self.shader, "max")
+        glUniform2f(max_loc, self.L, self.L*fb_h/fb_w)
 
         glBindVertexArray(self.VAO)
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
