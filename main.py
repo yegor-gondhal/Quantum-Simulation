@@ -94,7 +94,7 @@ class GLWidget(QOpenGLWidget):
         self.cell_spacing = e_wavelength/20
         sigma = 8*e_wavelength
         self.L = 12*sigma
-        self.delta_t = self.e_mass*self.cell_spacing**2/(8*self.hbar) # 8
+        self.delta_t = self.e_mass*self.cell_spacing**2/(1*self.hbar) # 8
         x_i = self.L/10
         y_i = self.L*self.sim_ratio/2
 
@@ -208,11 +208,16 @@ class GLWidget(QOpenGLWidget):
         KX, KY = xp.meshgrid(kx, ky)
         k_squared = KX**2 + KY**2
         psi_hat = xp.fft.fft2(self.psi)
-        psi_hat = psi_hat*xp.exp(-1j*self.hbar*(k_squared**2)*self.delta_t/(2*self.e_mass))
+        psi_hat = psi_hat*xp.exp(-1j*self.hbar*k_squared*self.delta_t/(2*self.e_mass))
         self.psi = xp.fft.ifft2(psi_hat)
         psi_prob = xp.square(xp.abs(self.psi))
-        psi_vis = xp.log(1 + 1e4*psi_prob)
-        psi_vis = psi_vis / xp.max(psi_vis)
+        psi_vis = xp.log1p(1e2*psi_prob)
+
+        if not hasattr(self, "max_vis"):
+            self.max_vis = xp.max(psi_vis)
+
+        psi_vis /= self.max_vis
+        psi_vis = xp.clip(psi_vis, 0, 1.0)
         psi_vis_cpu = xp.asnumpy(psi_vis)
 
         glBindTexture(GL_TEXTURE_2D, self.psi_texture)
