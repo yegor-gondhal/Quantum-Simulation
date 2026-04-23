@@ -74,22 +74,37 @@ class GLWidget(QOpenGLWidget):
         c = 3e8
         e_vel_x = 0.01*c
         e_vel_y = 0
-        pi = 3.14159
         hbar = 1.05457e-34
         k_0_x = e_vel_x*e_mass/hbar
         k_0_y = e_vel_y*e_mass/hbar
         k_0 = xp.sqrt(k_0_x**2 + k_0_y**2)
-        e_wavelength = 2*pi/k_0
+        e_wavelength = 2*xp.pi/k_0
         cell_spacing = e_wavelength/20
         sigma = 8*e_wavelength
         L = 12*sigma
         delta_t = e_mass*cell_spacing**2/(8*hbar)
+        x_i = L/10
+        y_i = L/2
 
         ratio = fb_h/fb_w
-        width_pixels = xp.linspace(0, 10, 1000)
-        height_pixels = xp.linspace(0, 10*ratio, 1000)
-        A, B = xp.meshgrid(width_pixels, height_pixels)
-        cells = xp.stack([A, B], axis=-1)
+        width_cells = xp.linspace(0, L, int(L/cell_spacing))
+        height_cells = xp.linspace(0, L*ratio, int(L*ratio/cell_spacing))
+        A, B = xp.meshgrid(width_cells, height_cells)
+        cell_pos = xp.stack([A, B], axis=-1)
+
+        # Initial Values
+        psi = xp.exp((1j)*(k_0_x*(cell_pos[..., 0] - x_i) + k_0_y*(cell_pos[..., 1] - y_i)) - ((cell_pos[..., 0] - x_i)**2 + (cell_pos[..., 1] - y_i)**2)/(2*sigma**2))
+
+        # Integrate
+        psi_prob_int = (xp.abs(psi)**2)
+        psi_prob_int = xp.sum(psi_prob_int)
+        psi_prob_int *= cell_spacing**2
+
+        # Normalize wavefunction
+        psi /= xp.sqrt(psi_prob_int)
+
+
+
 
     def keyPressEvent(self, event):
         self.keys.add(event.key())
