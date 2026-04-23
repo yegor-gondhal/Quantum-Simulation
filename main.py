@@ -78,18 +78,18 @@ class GLWidget(QOpenGLWidget):
         self.hbar = 1.05457e-34
         k_0_x = e_vel_x*self.e_mass/self.hbar
         k_0_y = e_vel_y*self.e_mass/self.hbar
-        self.k_0 = xp.sqrt(k_0_x**2 + k_0_y**2)
+        self.k_0 = xp.hypot(k_0_x, k_0_y)
         e_wavelength = 2*xp.pi/self.k_0
-        cell_spacing = e_wavelength/20
+        self.cell_spacing = e_wavelength/20
         sigma = 8*e_wavelength
         self.L = 12*sigma
-        self.delta_t = self.e_mass*cell_spacing**2/(8*self.hbar)
+        self.delta_t = self.e_mass*self.cell_spacing**2/(8*self.hbar)
         x_i = self.L/10
         y_i = self.L*ratio/2
 
 
-        width_cells = xp.linspace(0, self.L, int(self.L/cell_spacing))
-        height_cells = xp.linspace(0, self.L*ratio, int(self.L*ratio/cell_spacing))
+        width_cells = xp.linspace(0, self.L, int(self.L/self.cell_spacing))
+        height_cells = xp.linspace(0, self.L*ratio, int(self.L*ratio/self.cell_spacing))
         A, B = xp.meshgrid(width_cells, height_cells)
         cell_pos = xp.stack([A, B], axis=-1)
 
@@ -99,7 +99,7 @@ class GLWidget(QOpenGLWidget):
         # Integrate
         psi_prob_int = (xp.abs(self.psi)**2)
         psi_prob_int = xp.sum(psi_prob_int)
-        psi_prob_int *= cell_spacing**2
+        psi_prob_int *= self.cell_spacing**2
 
         # Normalize wavefunction
         self.psi /= xp.sqrt(psi_prob_int)
@@ -109,6 +109,10 @@ class GLWidget(QOpenGLWidget):
         self.scale = float(self.L*ratio)
         self.old_scale = float(self.L*ratio)
         self.initial_scale = np.copy(self.scale)
+
+        print("Initial fb_h: ", fb_h)
+        print("Initial fb_w: ", fb_w)
+        print("Ratio: ", fb_h/fb_w, "\n")
 
 
 
@@ -141,31 +145,21 @@ class GLWidget(QOpenGLWidget):
             self.screen_corner[1] = self.prev_screen_corner[1] + (event.position().y() * dpr - self.prev_mouse_coords[1])*self.scale/fb_h
 
     def wheelEvent(self, event):
-        print("Activating wheelEvent")
-        print(type(self.L), self.L)
-        print(type(self.scale), self.scale)
         delta = event.angleDelta().y()
         factor = 1.1
 
         dpr = self.devicePixelRatioF()
         fb_h = max(self.height() * dpr, 1.0)
-        print("Old Scale: ", self.scale)
-        print("Old Screen Corner: ", self.screen_corner)
         mouse_screen = np.array([event.position().x() * dpr/fb_h, 1 - event.position().y() * dpr/fb_h], dtype=np.float32)
-        print("Mouse Screen: ", mouse_screen)
         mouse_pos = self.screen_corner + mouse_screen*self.scale
-        print("Mouse Position: ", mouse_pos)
         self.old_scale = np.copy(self.scale)
         if delta > 0 and self.scale < 4*self.initial_scale:
             self.scale *= factor # smaller
-            print("New Scale: ", self.scale)
 
         elif delta < 0 and self.scale > (1/4)*self.initial_scale:
             self.scale /= factor # bigger
-            print("New Scale: ", self.scale)
 
         self.screen_corner = mouse_pos - mouse_screen*self.scale
-        print("New Screen Corner: ", self.screen_corner)
 
     def initializeGL(self):
 
@@ -200,11 +194,26 @@ class GLWidget(QOpenGLWidget):
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fb_w, fb_h,0, GL_RGBA, GL_UNSIGNED_BYTE,None)
 
     def update_sim(self):
+        dpr = self.devicePixelRatioF()
+        fb_h = max(self.height() * dpr, 1.0)
+        fb_w = max(self.width() * dpr, 1.0)
+        ratio = fb_h/fb_w
 
         self.psi = self.psi*xp.exp(-1j*self.V*self.delta_t/self.hbar)
+        kx = xp.fft.fftfreq(int(self.L/self.cell_spacing), d=self.cell_spacing)*2*xp.pi
+        ky = xp.fft.fftfreq(int(self.L*ratio/self.cell_spacing), d=self.cell_spacing)*2*xp.pi
+        KX, KY = xp.meshgrid(kx, ky)
+        k_squared = KX**2 + KY**2
         psi_hat = xp.fft.fft2(self.psi)
         psi_hat = psi_hat*xp.exp(-1j*self.hbar*(self.k_0**2)*self.delta_t/(2*self.e_mass))
         self.psi = xp.fft.ifft2(psi_hat)
+
+
+        print("fb_h: ", fb_h)
+        print("fb_w: ", fb_w)
+        print("Ratio: ", fb_h / fb_w, "\n")
+
+
 
         self.update()
 
