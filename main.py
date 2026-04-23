@@ -30,7 +30,6 @@ FRAGMENT_SHADER = """
 
 out vec4 FragColor;
 
-uniform vec2 center;
 uniform vec2 screen;
 uniform vec2 max;
 uniform float resolution;
@@ -53,10 +52,6 @@ void main() {
 class GLWidget(QOpenGLWidget):
     def __init__(self):
         super().__init__()
-        dpr = self.devicePixelRatioF()
-        fb_h = max(self.height() * dpr, 1.0)
-        fb_w = max(self.width() * dpr, 1.0)
-        self.center = np.array([0, 0], dtype=np.float32)
         self.screen_corner = np.array([0, 0], dtype=np.float32)
 
         self.timer = QTimer()
@@ -68,7 +63,7 @@ class GLWidget(QOpenGLWidget):
         self.mouse_down = False
         self.prev_mouse_coords = np.array([0, 0], dtype=np.float32)
         self.prev_screen_corner = np.array([0, 0], dtype=np.float32)
-        ratio = fb_h / fb_w
+        self.sim_ratio = 0.57
 
 
         self.e_mass = 9.109e-31
@@ -85,11 +80,11 @@ class GLWidget(QOpenGLWidget):
         self.L = 12*sigma
         self.delta_t = self.e_mass*self.cell_spacing**2/(8*self.hbar)
         x_i = self.L/10
-        y_i = self.L*ratio/2
+        y_i = self.L*self.sim_ratio/2
 
 
         width_cells = xp.linspace(0, self.L, int(self.L/self.cell_spacing))
-        height_cells = xp.linspace(0, self.L*ratio, int(self.L*ratio/self.cell_spacing))
+        height_cells = xp.linspace(0, self.L*self.sim_ratio, int(self.L*self.sim_ratio/self.cell_spacing))
         A, B = xp.meshgrid(width_cells, height_cells)
         cell_pos = xp.stack([A, B], axis=-1)
 
@@ -106,14 +101,9 @@ class GLWidget(QOpenGLWidget):
 
         self.V = xp.zeros_like(self.psi)
 
-        self.scale = float(self.L*ratio)
-        self.old_scale = float(self.L*ratio)
+        self.scale = float(self.L*self.sim_ratio)
+        self.old_scale = float(self.L*self.sim_ratio)
         self.initial_scale = np.copy(self.scale)
-
-        print("Initial fb_h: ", fb_h)
-        print("Initial fb_w: ", fb_w)
-        print("Ratio: ", fb_h/fb_w, "\n")
-
 
 
 
@@ -194,25 +184,15 @@ class GLWidget(QOpenGLWidget):
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fb_w, fb_h,0, GL_RGBA, GL_UNSIGNED_BYTE,None)
 
     def update_sim(self):
-        dpr = self.devicePixelRatioF()
-        fb_h = max(self.height() * dpr, 1.0)
-        fb_w = max(self.width() * dpr, 1.0)
-        ratio = fb_h/fb_w
 
         self.psi = self.psi*xp.exp(-1j*self.V*self.delta_t/self.hbar)
         kx = xp.fft.fftfreq(int(self.L/self.cell_spacing), d=self.cell_spacing)*2*xp.pi
-        ky = xp.fft.fftfreq(int(self.L*ratio/self.cell_spacing), d=self.cell_spacing)*2*xp.pi
+        ky = xp.fft.fftfreq(int(self.L*self.sim_ratio/self.cell_spacing), d=self.cell_spacing)*2*xp.pi
         KX, KY = xp.meshgrid(kx, ky)
         k_squared = KX**2 + KY**2
         psi_hat = xp.fft.fft2(self.psi)
-        psi_hat = psi_hat*xp.exp(-1j*self.hbar*(self.k_0**2)*self.delta_t/(2*self.e_mass))
+        psi_hat = psi_hat*xp.exp(-1j*self.hbar*(k_squared**2)*self.delta_t/(2*self.e_mass))
         self.psi = xp.fft.ifft2(psi_hat)
-
-
-        print("fb_h: ", fb_h)
-        print("fb_w: ", fb_w)
-        print("Ratio: ", fb_h / fb_w, "\n")
-
 
 
         self.update()
@@ -224,9 +204,6 @@ class GLWidget(QOpenGLWidget):
         dpr = self.devicePixelRatioF()
         fb_h = max(self.height() * dpr, 1.0)
         fb_w = max(self.width() * dpr, 1.0)
-
-        center_loc = glGetUniformLocation(self.shader, "center")
-        glUniform2f(center_loc, self.center[0], self.center[1])
 
         screen_loc = glGetUniformLocation(self.shader, "screen")
         glUniform2f(screen_loc, self.screen_corner[0], self.screen_corner[1])
@@ -243,8 +220,6 @@ class GLWidget(QOpenGLWidget):
         glBindVertexArray(self.VAO)
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
 
-    def resizeGL(self, w, h):
-        glViewport(0, 0, w, h)
 
 
 class MainWindow(QMainWindow):
