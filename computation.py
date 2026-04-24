@@ -87,4 +87,4 @@ while True:
     psi_vis = xp.log1p(psi_prob)
     psi_vis /= max_vis
     psi_vis = xp.power(psi_vis, 2.0)
-    psi_vis = xp.clip(psi_vis, 0, 1.0)
+    psi_vis = xp.clip(psi_vis, 0, 1.0)#
