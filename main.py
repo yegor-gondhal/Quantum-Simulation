@@ -85,28 +85,31 @@ class GLWidget(QOpenGLWidget):
         self.e_mass = 9.109e-31
         c = 3e8
         e_vel_x = 0.01*c
+        #e_vel_x = 0
         e_vel_y = 0
         self.hbar = 1.05457e-34
         k_0_x = e_vel_x*self.e_mass/self.hbar
         k_0_y = e_vel_y*self.e_mass/self.hbar
         self.k_0 = xp.hypot(k_0_x, k_0_y)
         e_wavelength = 2*xp.pi/self.k_0
-        self.cell_spacing = e_wavelength/20
-        sigma = 8*e_wavelength
+        sigma = 2e-9
+        self.cell_spacing = sigma/(20*2)
         self.L = 12*sigma
         self.delta_t = self.e_mass*self.cell_spacing**2/(1*self.hbar) # 8
-        x_i = self.L/10
-        y_i = self.L*self.sim_ratio/2
+        self.sim_dims = [3*self.L, 3*self.L*self.sim_ratio]
+        x_i = self.sim_dims[0]/5
+        #x_i = self.sim_dims[0]/2
+        y_i = self.sim_dims[1]/2
 
-        self.num_cells = [int(self.L/self.cell_spacing), int(self.L*self.sim_ratio/self.cell_spacing)]
+        self.num_cells = [int(self.sim_dims[0]/self.cell_spacing), int(self.sim_dims[1]/self.cell_spacing)]
 
-        width_cells = xp.linspace(0, self.L, self.num_cells[0])
-        height_cells = xp.linspace(0, self.L*self.sim_ratio, self.num_cells[1])
+        width_cells = xp.linspace(0, self.sim_dims[0], self.num_cells[0])
+        height_cells = xp.linspace(0, self.sim_dims[1], self.num_cells[1])
         A, B = xp.meshgrid(width_cells, height_cells)
         cell_pos = xp.stack([A, B], axis=-1)
 
         # Initial Values
-        self.psi = xp.exp((1j)*(k_0_x*(cell_pos[..., 0] - x_i) + k_0_y*(cell_pos[..., 1] - y_i)) - ((cell_pos[..., 0] - x_i)**2 + (cell_pos[..., 1] - y_i)**2)/(2*sigma**2))
+        self.psi = xp.exp((1j)*(k_0_x*(cell_pos[..., 0] - x_i) + k_0_y*(cell_pos[..., 1] - y_i)) - ((cell_pos[..., 0] - x_i)**2 + (cell_pos[..., 1] - y_i)**2)/(0.2*sigma**2))
 
         # Integrate
         psi_prob_int = (xp.abs(self.psi)**2)
@@ -116,10 +119,25 @@ class GLWidget(QOpenGLWidget):
         # Normalize wavefunction
         self.psi /= xp.sqrt(psi_prob_int)
 
-        self.V = xp.zeros_like(self.psi)
+        V_real = xp.zeros_like(self.psi)
 
-        self.scale = float(self.L*self.sim_ratio)
-        self.old_scale = float(self.L*self.sim_ratio)
+        x = xp.arange(self.num_cells[0])
+        y = xp.arange(self.num_cells[1])
+
+        dx = xp.minimum(x, self.num_cells[0] - x - 1)
+        dy = xp.minimum(y, self.num_cells[1] - y - 1)
+
+        DX, DY = xp.meshgrid(dx, dy)
+        dist = xp.minimum(DX, DY)
+        width = 3*sigma/ self.cell_spacing
+        mask = xp.clip((width - dist)/width, 0, 1)
+        E = 0.5 * self.e_mass * (e_vel_x**2 + e_vel_y**2)
+        W = 1.5*E*mask**4
+
+        self.V = V_real - 1j*W
+
+        self.scale = float(self.sim_dims[1])
+        self.old_scale = float(self.sim_dims[1])
         self.initial_scale = np.copy(self.scale)
 
 
@@ -203,20 +221,21 @@ class GLWidget(QOpenGLWidget):
     def update_sim(self):
 
         self.psi = self.psi*xp.exp(-1j*self.V*self.delta_t/self.hbar)
-        kx = xp.fft.fftfreq(int(self.L/self.cell_spacing), d=self.cell_spacing)*2*xp.pi
-        ky = xp.fft.fftfreq(int(self.L*self.sim_ratio/self.cell_spacing), d=self.cell_spacing)*2*xp.pi
+        kx = xp.fft.fftfreq(int(self.sim_dims[0]/self.cell_spacing), d=self.cell_spacing)*2*xp.pi
+        ky = xp.fft.fftfreq(int(self.sim_dims[1]/self.cell_spacing), d=self.cell_spacing)*2*xp.pi
         KX, KY = xp.meshgrid(kx, ky)
         k_squared = KX**2 + KY**2
         psi_hat = xp.fft.fft2(self.psi)
         psi_hat = psi_hat*xp.exp(-1j*self.hbar*k_squared*self.delta_t/(2*self.e_mass))
         self.psi = xp.fft.ifft2(psi_hat)
         psi_prob = xp.square(xp.abs(self.psi))
-        psi_vis = xp.log1p(1e2*psi_prob)
+        psi_vis = xp.log1p(psi_prob)
 
         if not hasattr(self, "max_vis"):
             self.max_vis = xp.max(psi_vis)
 
         psi_vis /= self.max_vis
+        psi_vis = xp.power(psi_vis, 0.4)
         psi_vis = xp.clip(psi_vis, 0, 1.0)
         psi_vis_cpu = xp.asnumpy(psi_vis)
 
@@ -246,7 +265,7 @@ class GLWidget(QOpenGLWidget):
         glUniform1f(res_loc, fb_h)
 
         max_loc = glGetUniformLocation(self.shader, "max")
-        glUniform2f(max_loc, self.L, self.L*fb_h/fb_w)
+        glUniform2f(max_loc, self.sim_dims[0], self.sim_dims[1])
 
         num_cell_loc = glGetUniformLocation(self.shader, "num_cells")
         glUniform2f(num_cell_loc, self.num_cells[0], self.num_cells[1])
