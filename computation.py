@@ -23,7 +23,7 @@ x_i = sim_dims[0]/4
 #x_i = sim_dims[0]/2
 y_i = sim_dims[1]/2
 
-num_cells = [int(sim_dims[0]*cell_spacing), int(sim_dims[1]/cell_spacing)]
+num_cells = [int(sim_dims[0]/cell_spacing), int(sim_dims[1]/cell_spacing)]
 
 width_cells = np.linspace(0, sim_dims[0], num_cells[0])
 height_cells = np.linspace(0, sim_dims[1], num_cells[1])
@@ -32,7 +32,7 @@ cell_pos = np.stack([A, B], axis=-1)
 
 # Initial Values
 psi = np.exp((1j)*(k_0_x*(cell_pos[..., 0] - x_i) + k_0_y*(cell_pos[..., 1] - y_i)) - ((cell_pos[..., 0] - x_i)**2 + (cell_pos[..., 1] - y_i)**2)/(0.2*sigma**2))
-psi = xp.asarray(psi, dtype=xp.float64)
+psi = xp.asarray(psi, dtype=xp.complex128)
 
 # Integrate
 psi_prob_int = (xp.abs(psi)**2)
@@ -74,7 +74,29 @@ psi_prob = xp.square(xp.abs(psi))
 psi_vis = xp.log1p(psi_prob)
 max_vis = xp.max(psi_vis)
 
-while True:
+delta_t = xp.asarray(delta_t,dtype=xp.float64)
+hbar = xp.asarray(hbar, dtype=xp.float64)
+
+
+num_frames_saved = 20
+frame = 0
+save_every = 10
+buffer_counter = 0
+if num_frames_saved < 20:
+    buffer_size = num_frames_saved
+else:
+    buffer_size = 20
+write_index = 0
+H, W = psi.shape
+buffer = xp.zeros((buffer_size, H, W), dtype=xp.float16)
+output = np.lib.format.open_memmap(
+    "psi_vis_output.npy",
+    mode="w+",
+    dtype=np.float16,
+    shape=(num_frames_saved, H, W)
+)
+
+while frame < save_every*num_frames_saved:
     psi = psi*xp.exp(-1j*V*delta_t/hbar)
     psi *= infinite_P
 
@@ -83,8 +105,21 @@ while True:
     psi = xp.fft.ifft2(psi_hat)
     psi *= infinite_P
 
-    psi_prob = xp.square(xp.abs(psi))
-    psi_vis = xp.log1p(psi_prob)
-    psi_vis /= max_vis
-    psi_vis = xp.power(psi_vis, 2.0)
-    psi_vis = xp.clip(psi_vis, 0, 1.0)#
+    if frame % save_every == 0:
+        psi_prob = xp.square(xp.abs(psi))
+        psi_vis = xp.log1p(psi_prob)
+        psi_vis /= max_vis
+        psi_vis = xp.power(psi_vis, 2.0)
+        psi_vis = xp.clip(psi_vis, 0, 1.0)
+        save_frame = int(frame/save_every)
+        buffer[save_frame%buffer_size] = psi_vis.astype(xp.float16)
+        buffer_counter += 1
+        if buffer_counter == buffer_size:
+            output[write_index:write_index+buffer_size] = xp.asnumpy(buffer)
+            write_index += buffer_size
+            buffer_counter = 0
+
+    if frame%100 == 0:
+        print(100*frame/(save_every*num_frames_saved), "%")
+
+    frame += 1
