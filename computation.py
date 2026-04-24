@@ -1,5 +1,6 @@
 import numpy as np
 import cupy as cp
+import time
 
 xp = cp
 
@@ -78,14 +79,14 @@ delta_t = xp.asarray(delta_t,dtype=xp.float64)
 hbar = xp.asarray(hbar, dtype=xp.float64)
 
 
-num_frames_saved = 20
+num_frames_saved = 10000
 frame = 0
 save_every = 10
 buffer_counter = 0
-if num_frames_saved < 20:
+if num_frames_saved < 50:
     buffer_size = num_frames_saved
 else:
-    buffer_size = 20
+    buffer_size = 50
 write_index = 0
 H, W = psi.shape
 buffer = xp.zeros((buffer_size, H, W), dtype=xp.float16)
@@ -95,7 +96,7 @@ output = np.lib.format.open_memmap(
     dtype=np.float16,
     shape=(num_frames_saved, H, W)
 )
-
+t1 = time.time()
 while frame < save_every*num_frames_saved:
     psi = psi*xp.exp(-1j*V*delta_t/hbar)
     psi *= infinite_P
@@ -123,3 +124,12 @@ while frame < save_every*num_frames_saved:
         print(100*frame/(save_every*num_frames_saved), "%")
 
     frame += 1
+t2 = time.time()
+print("Time: ", t2-t1)
+np.savez(
+    "sim_params.npz",
+    sim_dims=sim_dims,
+    H=H,
+    W=W,
+    max_frames=output.shape[0]
+)
