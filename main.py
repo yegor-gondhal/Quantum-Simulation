@@ -96,8 +96,8 @@ class GLWidget(QOpenGLWidget):
         self.cell_spacing = sigma/(20*2)
         self.L = 12*sigma
         self.delta_t = self.e_mass*self.cell_spacing**2/(1*self.hbar) # 8
-        self.sim_dims = [3*self.L, 3*self.L*self.sim_ratio]
-        x_i = self.sim_dims[0]/5
+        self.sim_dims = [5*self.L, 5*self.L*self.sim_ratio]
+        x_i = self.sim_dims[0]/4
         #x_i = self.sim_dims[0]/2
         y_i = self.sim_dims[1]/2
 
@@ -124,12 +124,17 @@ class GLWidget(QOpenGLWidget):
         x = xp.arange(self.num_cells[0])
         y = xp.arange(self.num_cells[1])
 
+        X, Y = xp.meshgrid(x, y)
+        mask = ((self.num_cells[0]/2 - 40 < X) & (X < self.num_cells[0]/2 + 40))
+        mask &= ((Y < self.num_cells[1]/2 - 120) | (Y > self.num_cells[1]/2 + 120) | ((Y < self.num_cells[1]/2 + 40) & (Y > self.num_cells[1]/2 - 40)))
+        V_real[mask] = 1e50
+
         dx = xp.minimum(x, self.num_cells[0] - x - 1)
         dy = xp.minimum(y, self.num_cells[1] - y - 1)
 
         DX, DY = xp.meshgrid(dx, dy)
         dist = xp.minimum(DX, DY)
-        width = 3*sigma/ self.cell_spacing
+        width = 3.5*sigma/ self.cell_spacing
         mask = xp.clip((width - dist)/width, 0, 1)
         E = 0.5 * self.e_mass * (e_vel_x**2 + e_vel_y**2)
         W = 1.5*E*mask**4
