@@ -93,9 +93,9 @@ class GLWidget(QOpenGLWidget):
         self.k_0 = xp.hypot(k_0_x, k_0_y)
         e_wavelength = 2*xp.pi/self.k_0
         sigma = 2e-9
-        self.cell_spacing = sigma/(20*2)
+        self.cell_spacing = sigma/(20*4)
         self.L = 12*sigma
-        self.delta_t = self.e_mass*self.cell_spacing**2/(1*self.hbar) # 8
+        self.delta_t = self.e_mass*self.cell_spacing**2/(10*self.hbar) # 8
         self.sim_dims = [5*self.L, 5*self.L*self.sim_ratio]
         x_i = self.sim_dims[0]/4
         #x_i = self.sim_dims[0]/2
@@ -125,8 +125,8 @@ class GLWidget(QOpenGLWidget):
         y = xp.arange(self.num_cells[1])
 
         X, Y = xp.meshgrid(x, y)
-        mask = ((self.num_cells[0]/2 - 40 < X) & (X < self.num_cells[0]/2 + 40))
-        mask &= ((Y < self.num_cells[1]/2 - 120) | (Y > self.num_cells[1]/2 + 120) | ((Y < self.num_cells[1]/2 + 40) & (Y > self.num_cells[1]/2 - 40)))
+        mask = ((self.num_cells[0]/2 - 100 < X) & (X < self.num_cells[0]/2 + 100))
+        mask &= ((Y < self.num_cells[1]/2 - 300) | (Y > self.num_cells[1]/2 + 300) | ((Y < self.num_cells[1]/2 + 100) & (Y > self.num_cells[1]/2 - 100)))
         V_real[mask] = 1e50
 
         dx = xp.minimum(x, self.num_cells[0] - x - 1)
@@ -240,15 +240,12 @@ class GLWidget(QOpenGLWidget):
             self.max_vis = xp.max(psi_vis)
 
         psi_vis /= self.max_vis
-        psi_vis = xp.power(psi_vis, 0.4)
+        psi_vis = xp.power(psi_vis, 2.0)
         psi_vis = xp.clip(psi_vis, 0, 1.0)
         psi_vis_cpu = xp.asnumpy(psi_vis)
 
         glBindTexture(GL_TEXTURE_2D, self.psi_texture)
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, psi_vis_cpu.shape[1], psi_vis_cpu.shape[0], GL_RED, GL_FLOAT, psi_vis_cpu)
-
-        #print("Max: ", np.max(psi_vis_cpu))
-        #print("Min: ", np.min(psi_vis_cpu), "\n")
 
         self.update()
 
