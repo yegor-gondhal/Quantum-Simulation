@@ -10,6 +10,7 @@ from classes import SimParams
 params = SimParams("sim_params.npz")
 frames = np.load("psi_vis_output.npy", "r")
 
+print(frames.shape[0])
 
 VERTEX_SHADER = """
 #version 330 core

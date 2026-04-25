@@ -3,9 +3,9 @@ import cupy as cp
 import time
 
 xp = cp
-np_prec = np.float32
-xp_prec = xp.float32
-xp_complex = xp.complex64
+np_prec = np.float64
+xp_prec = xp.float64
+xp_complex = xp.complex128
 
 e_mass = np.array(9.1093835611e-31, dtype=np_prec)
 c = np.array(299792458, dtype=np_prec)
@@ -20,18 +20,14 @@ e_wavelength = 2*np.pi/k_0
 sigma = np.array(2e-9, dtype=np_prec)
 L = 12*sigma
 num_cells = [7776, 4374]
+#num_cells = [4608, 2592]
 sim_ratio = num_cells[1]/num_cells[0]
-sim_dims = np.array([5*L, 5*L*sim_ratio], dtype=np_prec)
+sim_dims = np.array([10*L, 10*L*sim_ratio], dtype=np_prec)
 cell_spacing = sim_dims[0]/num_cells[0]
-#cell_spacing = sigma/(20.0*6.0)
-#num_cells = [int(sim_dims[0]/cell_spacing), int(sim_dims[1]/cell_spacing)]
-delta_t = e_mass*cell_spacing**2/(14*hbar) # 8
+delta_t = e_mass*cell_spacing**2/(15*hbar)
 x_i = sim_dims[0]/4
-#x_i = sim_dims[0]/2
 y_i = sim_dims[1]/2
 
-#num_cells = [int(sim_dims[0]/cell_spacing), int(sim_dims[1]/cell_spacing)]
-#print(num_cells)
 width_cells = np.linspace(0, sim_dims[0], num_cells[0])
 height_cells = np.linspace(0, sim_dims[1], num_cells[1])
 A, B = np.meshgrid(width_cells, height_cells)
@@ -61,7 +57,7 @@ X, Y = xp.meshgrid(x, y)
 mask = ((num_cells[0]/2 - 100 < X) & (X < num_cells[0]/2 + 100))
 mask &= ((Y < num_cells[1]/2 - 60) | (Y > num_cells[1]/2 + 60) | ((Y < num_cells[1]/2 + 20) & (Y > num_cells[1]/2 - 20)))
 infinite_P = ~mask
-V_real[mask] = 1j * 100 * E
+V_real[mask] = -1j * 100 * E
 
 dx = xp.minimum(x, num_cells[0] - x - 1)
 dy = xp.minimum(y, num_cells[1] - y - 1)
@@ -158,15 +154,15 @@ def fourth_order(psi):
 
     return psi
 
-num_frames_saved = 8000
-start_offset = 1000
+num_frames_saved = 8000 #8000
+start_offset = 1000 # 1000
 frame = 0
 save_every = 10
 buffer_counter = 0
-if num_frames_saved < 50:
+if num_frames_saved < 25:
     buffer_size = num_frames_saved
 else:
-    buffer_size = 50
+    buffer_size = 25
 write_index = 0
 H, W = psi.shape
 buffer = xp.zeros((buffer_size, H, W), dtype=xp.float16)
@@ -179,10 +175,16 @@ output = np.lib.format.open_memmap(
 t1 = time.time()
 while frame < (save_every*(num_frames_saved+start_offset)):
 
+    if frame%100 == 0:
+        t2 = time.time()
+        print(100*frame/(save_every*(num_frames_saved+start_offset)), "%")
+        print(t2-t1, "\n")
+
     psi = fourth_order(psi)
 
     if frame % save_every == 0:
         if frame/save_every < start_offset:
+            frame += 1
             continue
         psi_prob = xp.square(xp.abs(psi))
         psi_vis = xp.log1p(psi_prob)
@@ -197,11 +199,8 @@ while frame < (save_every*(num_frames_saved+start_offset)):
             write_index += buffer_size
             buffer_counter = 0
 
-    if frame%100 == 0:
-        print(100*frame/(save_every*num_frames_saved), "%")
-
-
     frame += 1
+
 t3 = time.time()
 print("Total Time: ", t3-t1)
 np.savez(
