@@ -16,9 +16,9 @@ k_0_y = e_vel_y*e_mass/hbar
 k_0 = xp.hypot(k_0_x, k_0_y)
 e_wavelength = 2*np.pi/k_0
 sigma = np.array(2e-9, dtype=np.float64)
-cell_spacing = sigma/(20.0*4.0)
+cell_spacing = sigma/(20.0*5.0)
 L = 12*sigma
-delta_t = e_mass*cell_spacing**2/(10*hbar) # 8
+delta_t = e_mass*cell_spacing**2/(14*hbar) # 8
 sim_dims = np.array([5*L, 5*L*sim_ratio], dtype=np.float64)
 x_i = sim_dims[0]/4
 #x_i = sim_dims[0]/2
@@ -50,7 +50,7 @@ y = xp.arange(num_cells[1])
 
 X, Y = xp.meshgrid(x, y)
 mask = ((num_cells[0]/2 - 100 < X) & (X < num_cells[0]/2 + 100))
-mask &= ((Y < num_cells[1]/2 - 300) | (Y > num_cells[1]/2 + 300) | ((Y < num_cells[1]/2 + 100) & (Y > num_cells[1]/2 - 100)))
+mask &= ((Y < num_cells[1]/2 - 60) | (Y > num_cells[1]/2 + 60) | ((Y < num_cells[1]/2 + 20) & (Y > num_cells[1]/2 - 20)))
 infinite_P = ~mask
 
 dx = xp.minimum(x, num_cells[0] - x - 1)
@@ -79,7 +79,34 @@ delta_t = xp.asarray(delta_t,dtype=xp.float64)
 hbar = xp.asarray(hbar, dtype=xp.float64)
 
 
-num_frames_saved = 10000
+def potential(psi, V, delta_t):
+    psi *= xp.exp(-1j * V * delta_t / hbar)
+    psi *= infinite_P
+
+def kinetic(psi):
+    psi_hat = xp.fft.fft2(psi)
+    psi_hat = psi_hat * xp.exp(-1j * hbar * k_squared * delta_t / (2 * e_mass))
+    psi = xp.fft.ifft2(psi_hat)
+    psi *= infinite_P
+
+def first_order(psi, V, delta_t):
+    potential(psi, V, delta_t)
+    kinetic(psi)
+
+def second_order(psi, V, delta_t):
+    potential(psi, V, delta_t/2)
+    kinetic(psi)
+    potential(psi, V, delta_t/2)
+
+def fourth_order(psi, V, delta_t):
+    a = xp.power(2, 1/3)
+    p = 1/(2 - a)
+    q = -a/(2 - a)
+    psi = second_order(psi, V, p*delta_t)
+    psi = second_order(psi, V, q*delta_t)
+    psi = second_order(psi, V, p*delta_t)
+
+num_frames_saved = 9000
 frame = 0
 save_every = 10
 buffer_counter = 0
@@ -98,13 +125,8 @@ output = np.lib.format.open_memmap(
 )
 t1 = time.time()
 while frame < save_every*num_frames_saved:
-    psi = psi*xp.exp(-1j*V*delta_t/hbar)
-    psi *= infinite_P
 
-    psi_hat = xp.fft.fft2(psi)
-    psi_hat = psi_hat*xp.exp(-1j*hbar*k_squared*delta_t/(2*e_mass))
-    psi = xp.fft.ifft2(psi_hat)
-    psi *= infinite_P
+    fourth_order(psi, V, delta_t)
 
     if frame % save_every == 0:
         psi_prob = xp.square(xp.abs(psi))

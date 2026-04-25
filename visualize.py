@@ -163,11 +163,11 @@ class GLWidget(QOpenGLWidget):
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, params.W, params.H, 0, GL_RED, GL_FLOAT, None)
 
     def update_sim(self):
-        self.frame_counter = 4000
-        if self.frame_counter == params.max_frames:
+        self.frame_counter += 1
+        if self.frame_counter*10 == params.max_frames:
             self.frame_counter = 0
         glBindTexture(GL_TEXTURE_2D, self.psi_texture)
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, params.W, params.H, GL_RED, GL_FLOAT, frames[self.frame_counter])
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, params.W, params.H, GL_RED, GL_FLOAT, frames[self.frame_counter*10])
 
 
         self.update()
